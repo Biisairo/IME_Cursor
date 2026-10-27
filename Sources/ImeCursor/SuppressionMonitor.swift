@@ -9,7 +9,11 @@ final class SuppressionMonitor {
 
   private(set) var cursorVisible = true
   private(set) var capturing = false
+  /// 키 이벤트 모니터는 권한이 필요해서 수정 키 상태를 주기마다 읽는다(FR-CAPS-1).
+  private(set) var capsLock = NSEvent.modifierFlags.contains(.capsLock)
   var onChange: (() -> Void)?
+  /// 표시 모드 불투명도를 다시 계산하도록 주기마다 부른다(FR-MODE-8).
+  var onTick: (() -> Void)?
 
   private var timer: Timer?
   private var tick = 0
@@ -25,7 +29,7 @@ final class SuppressionMonitor {
   }
 
   func refreshCursor() {
-    update(cursorVisible: CursorVisibility.isVisible, capturing: capturing)
+    update(cursorVisible: CursorVisibility.isVisible, capturing: capturing, capsLock: capsLock)
   }
 
   private func poll() {
@@ -34,13 +38,20 @@ final class SuppressionMonitor {
       tick == 0
       ? CaptureDetector.isCapturing(windows: Self.windows(), screenSaverLevel: screenSaverLevel)
       : self.capturing
-    update(cursorVisible: CursorVisibility.isVisible, capturing: capturing)
+    update(
+      cursorVisible: CursorVisibility.isVisible, capturing: capturing,
+      capsLock: NSEvent.modifierFlags.contains(.capsLock))
+    onTick?()
   }
 
-  private func update(cursorVisible: Bool, capturing: Bool) {
-    guard cursorVisible != self.cursorVisible || capturing != self.capturing else { return }
+  private func update(cursorVisible: Bool, capturing: Bool, capsLock: Bool) {
+    guard
+      cursorVisible != self.cursorVisible || capturing != self.capturing
+        || capsLock != self.capsLock
+    else { return }
     self.cursorVisible = cursorVisible
     self.capturing = capturing
+    self.capsLock = capsLock
     onChange?()
   }
 

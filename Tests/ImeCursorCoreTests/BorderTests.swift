@@ -114,8 +114,8 @@ import ImeCursorCore
 }
 
 @Suite struct SchemaMigrationTests {
-  @Test func currentSchemaVersionIsTwo() {
-    #expect(AppSettings.currentSchemaVersion == 2)
+  @Test func currentSchemaVersionIsThree() {
+    #expect(AppSettings.currentSchemaVersion == 3)
   }
 
   @Test func versionOneSettingsLoadWithBorderDefaults() {
@@ -131,7 +131,8 @@ import ImeCursorCore
     storage.values[SettingsStore.key] = Data(json.utf8)
     let loaded = SettingsStore(storage: storage).load()
     #expect(storage.values[SettingsStore.backupKey] == nil)
-    #expect(loaded.schemaVersion == 2)
+    #expect(loaded.schemaVersion == AppSettings.currentSchemaVersion)
+    #expect(loaded.behavior == .initial)
     #expect(loaded.badgeEnabled == false)
     #expect(loaded.defaultStyle.fontSize == 20)
     #expect(loaded.defaultStyle.fontWeight == .bold)
