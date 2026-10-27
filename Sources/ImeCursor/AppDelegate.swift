@@ -23,7 +23,8 @@ final class BadgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
   private func makeStatusItem() -> NSStatusItem {
     let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-    item.button?.image = NSImage(systemSymbolName: "keyboard", accessibilityDescription: "ImeCursor")
+    item.button?.image = IconArtwork.menuBarImage()
+    item.button?.image?.accessibilityDescription = "ImeCursor"
     let menu = NSMenu()
     menu.delegate = self
     toggleItem.target = self
