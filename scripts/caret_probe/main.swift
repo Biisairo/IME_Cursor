@@ -31,6 +31,7 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
   var point = CGPoint.zero
   var size = CGSize.zero
   guard let p = attribute(element, kAXPositionAttribute), let s = attribute(element, kAXSizeAttribute),
+    CFGetTypeID(p) == AXValueGetTypeID(), CFGetTypeID(s) == AXValueGetTypeID(),
     AXValueGetValue(p as! AXValue, .cgPoint, &point), AXValueGetValue(s as! AXValue, .cgSize, &size)
   else { return nil }
   return CGRect(origin: point, size: size)
@@ -38,7 +39,9 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
 
 /// 선택 범위 끝을 캐럿으로 본다. 크기 0 범위 → 끝 앞 글자의 오른쪽 변 → 끝 글자의 왼쪽 변 순서로 묻는다.
 func caretByRange(_ element: AXUIElement, field: CGRect?) -> CGRect? {
-  guard let value = attribute(element, kAXSelectedTextRangeAttribute) else { return nil }
+  guard let value = attribute(element, kAXSelectedTextRangeAttribute),
+    CFGetTypeID(value) == AXValueGetTypeID()
+  else { return nil }
   var range = CFRange()
   guard AXValueGetValue(value as! AXValue, .cfRange, &range) else { return nil }
   let end = range.location + range.length
@@ -65,6 +68,7 @@ func leftEdge(_ rect: CGRect) -> CGRect {
 enum Marker {
   typealias CopyEnd = @convention(c) (CFTypeRef) -> Unmanaged<CFTypeRef>?
   typealias Create = @convention(c) (CFAllocator?, CFTypeRef, CFTypeRef) -> Unmanaged<CFTypeRef>?
+  typealias TypeID = @convention(c) () -> CFTypeID
 
   static let handle = dlopen(
     "/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices", RTLD_LAZY)
@@ -74,13 +78,20 @@ enum Marker {
   static let create = dlsym(handle, "AXTextMarkerRangeCreate").map {
     unsafeBitCast($0, to: Create.self)
   }
+  static let rangeTypeID = dlsym(handle, "AXTextMarkerRangeGetTypeID").map {
+    unsafeBitCast($0, to: TypeID.self)()
+  }
+  static let markerTypeID = dlsym(handle, "AXTextMarkerGetTypeID").map {
+    unsafeBitCast($0, to: TypeID.self)()
+  }
 }
 
 /// WebKit, Chromium은 텍스트 마커로만 좌표를 주는 경우가 있다. 선택 범위 끝 마커로 캐럿을 구한다.
 func caretByMarker(_ element: AXUIElement, field: CGRect?) -> CGRect? {
   guard let selection = attribute(element, "AXSelectedTextMarkerRange"),
+    CFGetTypeID(selection) == Marker.rangeTypeID,
     let copyEnd = Marker.copyEnd, let create = Marker.create,
-    let end = copyEnd(selection)?.takeRetainedValue()
+    let end = copyEnd(selection)?.takeRetainedValue(), CFGetTypeID(end) == Marker.markerTypeID
   else { return nil }
   let bounds = { (start: CFTypeRef) -> CGRect? in
     guard let range = create(nil, start, end)?.takeRetainedValue() else { return nil }
@@ -88,7 +99,7 @@ func caretByMarker(_ element: AXUIElement, field: CGRect?) -> CGRect? {
   }
   if let found = bounds(end), valid(found, field) { return found }
   if let previous = parameterized(element, "AXPreviousTextMarkerForTextMarker", end),
-    let found = bounds(previous).map(rightEdge), valid(found, field)
+    CFGetTypeID(previous) == Marker.markerTypeID, let found = bounds(previous).map(rightEdge), valid(found, field)
   {
     return found
   }
@@ -184,7 +195,7 @@ func diagnose(_ element: AXUIElement) {
   print("  parameterized 개수: \(parameterNames.count)")
   let selected = attribute(element, kAXSelectedTextRangeAttribute)
   print("  AXSelectedTextRange: \(describe(selected))")
-  if let selected {
+  if let selected, CFGetTypeID(selected) == AXValueGetTypeID() {
     var range = CFRange()
     AXValueGetValue(selected as! AXValue, .cfRange, &range)
     for candidate in [range, CFRange(location: range.location, length: 1),
@@ -275,7 +286,9 @@ final class Probe {
       }
     }
     // Spotlight처럼 맨 앞 앱이 되지 않고 포커스만 가져가는 창이 있어서 시스템 전체에서 묻는다.
-    guard let focused = attribute(systemWide, kAXFocusedUIElementAttribute) else {
+    guard let focused = attribute(systemWide, kAXFocusedUIElementAttribute),
+      CFGetTypeID(focused) == AXUIElementGetTypeID()
+    else {
       report("\(app.localizedName ?? "?")\t포커스 요소 없음", caret: nil, field: nil)
       return
     }

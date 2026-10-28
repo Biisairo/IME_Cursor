@@ -24,7 +24,7 @@ import ImeCursorCore
 @Suite struct BadgePositionTests {
   @Test func initialPositionsMatchSpec() {
     #expect(BadgePosition.cursorInitial == BadgePosition(anchor: .bottomRight, offsetX: 16, offsetY: 16))
-    #expect(BadgePosition.caretInitial == BadgePosition(anchor: .right, offsetX: 2, offsetY: 0))
+    #expect(BadgePosition.caretInitial == BadgePosition(anchor: .topRight, offsetX: 0, offsetY: -2))
   }
 
   @Test func offsetsClampToRange() {
@@ -133,8 +133,15 @@ import ImeCursorCore
   @Test func caretRightIsVerticallyCentered() {
     let o = BadgePlacement.origin(
       target: CGRect(x: 100, y: 300, width: 2, height: 30), style: style(),
-      position: .caretInitial, screens: [main])
+      position: BadgePosition(anchor: .right, offsetX: 2, offsetY: 0), screens: [main])
     #expect(o == CGPoint(x: 104, y: 310))
+  }
+
+  @Test func caretInitialSitsAboveLineRightOfCaret() {
+    let o = BadgePlacement.origin(
+      target: CGRect(x: 100, y: 300, width: 2, height: 30), style: style(),
+      position: .caretInitial, screens: [main])
+    #expect(o == CGPoint(x: 102, y: 332))
   }
 
   @Test func clampsAtRightEdge() {

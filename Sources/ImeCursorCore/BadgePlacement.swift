@@ -39,7 +39,7 @@ public enum BadgeAnchor: String, Codable, CaseIterable, Sendable {
 /// 배지 위치: 기준 방향과 오프셋(FR-STYLE-7).
 public struct BadgePosition: Codable, Equatable, Hashable, Sendable {
   public static let cursorInitial = BadgePosition(anchor: .bottomRight, offsetX: 16, offsetY: 16)
-  public static let caretInitial = BadgePosition(anchor: .right, offsetX: 2, offsetY: 0)
+  public static let caretInitial = BadgePosition(anchor: .topRight, offsetX: 0, offsetY: -2)
 
   public var anchor: BadgeAnchor
   public var offsetX: Double

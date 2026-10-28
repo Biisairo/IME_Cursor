@@ -2,9 +2,11 @@ import ApplicationServices
 import ImeCursorCore
 
 /// 텍스트 마커 함수는 공개 헤더에 없어서 실행 시간에 찾는다(FR-CARET-5 (2)).
+/// 마커는 다른 프로세스가 준 값이므로, 함수에 넘기기 전에 타입을 확인한다.
 private enum TextMarker {
   typealias CopyEnd = @convention(c) (CFTypeRef) -> Unmanaged<CFTypeRef>?
   typealias Create = @convention(c) (CFAllocator?, CFTypeRef, CFTypeRef) -> Unmanaged<CFTypeRef>?
+  typealias TypeID = @convention(c) () -> CFTypeID
 
   nonisolated(unsafe) static let handle = dlopen(
     "/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices", RTLD_LAZY)
@@ -13,6 +15,20 @@ private enum TextMarker {
   }
   static let create = dlsym(handle, "AXTextMarkerRangeCreate").map {
     unsafeBitCast($0, to: Create.self)
+  }
+  static let rangeTypeID = dlsym(handle, "AXTextMarkerRangeGetTypeID").map {
+    unsafeBitCast($0, to: TypeID.self)()
+  }
+  static let markerTypeID = dlsym(handle, "AXTextMarkerGetTypeID").map {
+    unsafeBitCast($0, to: TypeID.self)()
+  }
+
+  static func isRange(_ value: CFTypeRef) -> Bool {
+    rangeTypeID.map { CFGetTypeID(value) == $0 } ?? false
+  }
+
+  static func isMarker(_ value: CFTypeRef) -> Bool {
+    markerTypeID.map { CFGetTypeID(value) == $0 } ?? false
   }
 }
 
@@ -34,9 +50,9 @@ struct AXFocusedText: FocusedText {
   var frame: CGRect? {
     var point = CGPoint.zero
     var size = CGSize.zero
-    guard let position = attribute(kAXPositionAttribute), let extent = attribute(kAXSizeAttribute),
-      AXValueGetValue(position as! AXValue, .cgPoint, &point),
-      AXValueGetValue(extent as! AXValue, .cgSize, &size)
+    guard let position = axValue(attribute(kAXPositionAttribute)),
+      let extent = axValue(attribute(kAXSizeAttribute)),
+      AXValueGetValue(position, .cgPoint, &point), AXValueGetValue(extent, .cgSize, &size)
     else { return nil }
     return CGRect(origin: point, size: size)
   }
@@ -47,9 +63,8 @@ struct AXFocusedText: FocusedText {
 
   var selectedRange: TextSpan? {
     var range = CFRange()
-    guard let value = attribute(kAXSelectedTextRangeAttribute),
-      CFGetTypeID(value) == AXValueGetTypeID(),
-      AXValueGetValue(value as! AXValue, .cfRange, &range)
+    guard let value = axValue(attribute(kAXSelectedTextRangeAttribute)),
+      AXValueGetValue(value, .cfRange, &range)
     else { return nil }
     return TextSpan(location: range.location, length: range.length)
   }
@@ -67,15 +82,18 @@ struct AXFocusedText: FocusedText {
 
   func markerBoundsBeforeEnd() -> CGRect? {
     guard let end = endMarker(),
-      let previous = parameterized("AXPreviousTextMarkerForTextMarker", end)
+      let previous = parameterized("AXPreviousTextMarkerForTextMarker", end),
+      TextMarker.isMarker(previous)
     else { return nil }
     return markerBounds(from: previous, to: end)
   }
 
   private func endMarker() -> CFTypeRef? {
-    guard let selection = attribute("AXSelectedTextMarkerRange"), let copyEnd = TextMarker.copyEnd
+    guard let selection = attribute("AXSelectedTextMarkerRange"), TextMarker.isRange(selection),
+      let copyEnd = TextMarker.copyEnd, let end = copyEnd(selection)?.takeRetainedValue(),
+      TextMarker.isMarker(end)
     else { return nil }
-    return copyEnd(selection)?.takeRetainedValue()
+    return end
   }
 
   private func markerBounds(from start: CFTypeRef, to end: CFTypeRef) -> CGRect? {
@@ -103,9 +121,13 @@ struct AXFocusedText: FocusedText {
 
   private func rect(_ value: CFTypeRef?) -> CGRect? {
     var rect = CGRect.zero
-    guard let value, CFGetTypeID(value) == AXValueGetTypeID(),
-      AXValueGetValue(value as! AXValue, .cgRect, &rect)
-    else { return nil }
+    guard let value = axValue(value), AXValueGetValue(value, .cgRect, &rect) else { return nil }
     return rect
+  }
+
+  /// 다른 프로세스가 준 값이므로 강제 캐스팅하지 않고 타입을 확인한다.
+  private func axValue(_ value: CFTypeRef?) -> AXValue? {
+    guard let value, CFGetTypeID(value) == AXValueGetTypeID() else { return nil }
+    return (value as! AXValue)
   }
 }

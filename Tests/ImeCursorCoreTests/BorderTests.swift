@@ -110,10 +110,19 @@ import ImeCursorCore
   }
 
   @Test func caretPreviewPutsBadgeRightOfCaretBar() {
-    let l = PreviewLayout.make(caretSize: PreviewLayout.caretSize, style: style(), position: .caretInitial)
+    let l = PreviewLayout.make(
+      caretSize: PreviewLayout.caretSize, style: style(),
+      position: BadgePosition(anchor: .right, offsetX: 2, offsetY: 0))
     #expect(PreviewLayout.caretSize == CGSize(width: 2, height: 18))
     #expect(l.imageOrigin == CGPoint(x: 12, y: 12))
     #expect(l.badgeOrigin == CGPoint(x: 16, y: 12))
     #expect(l.canvasSize == CGSize(width: 50, height: 42))
+  }
+
+  @Test func caretPreviewWithInitialPositionPutsBadgeAboveRight() {
+    let l = PreviewLayout.make(caretSize: PreviewLayout.caretSize, style: style(), position: .caretInitial)
+    #expect(l.badgeOrigin == CGPoint(x: 14, y: 12))
+    #expect(l.imageOrigin == CGPoint(x: 12, y: 32))
+    #expect(l.canvasSize == CGSize(width: 48, height: 62))
   }
 }

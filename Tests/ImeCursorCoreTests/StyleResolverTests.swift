@@ -19,7 +19,7 @@ import ImeCursorCore
     #expect(style.fontSize == 20)
     #expect(style.width == 40)
     let position = o.position(over: .caretInitial)
-    #expect(position == BadgePosition(anchor: .top, offsetX: 2, offsetY: 0))
+    #expect(position == BadgePosition(anchor: .top, offsetX: 0, offsetY: -2))
     #expect(!o.isEmpty)
   }
 
@@ -158,7 +158,7 @@ import ImeCursorCore
     settings.updateOverride(.caret, for: abc) { $0.offsetY = -4 }
     #expect(
       StyleResolver.resolve(.caret, current: abc, settings: settings).position
-        == BadgePosition(anchor: .top, offsetX: 2, offsetY: -4))
+        == BadgePosition(anchor: .top, offsetX: 0, offsetY: -4))
   }
 
   @Test func labelIsSharedByBothBadges() {
