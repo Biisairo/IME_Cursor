@@ -3,29 +3,34 @@ import ImeCursorCore
 
 @MainActor
 final class SuppressionMonitor {
-  static let interval: TimeInterval = 0.1
-  /// 창 목록 조회는 비싸서 커서 확인 세 번에 한 번만 한다(FR-HIDE-1).
-  static let captureCheckEvery = 3
+  /// 창 목록 조회는 비싸서 300 ms마다 한다(FR-HIDE-1).
+  static let captureCheckInterval: TimeInterval = 0.3
 
   private(set) var cursorVisible = true
   private(set) var capturing = false
   /// 키 이벤트 모니터는 권한이 필요해서 수정 키 상태를 주기마다 읽는다(FR-CAPS-1).
   private(set) var capsLock = NSEvent.modifierFlags.contains(.capsLock)
   var onChange: (() -> Void)?
-  /// 표시 모드 불투명도를 다시 계산하도록 주기마다 부른다(FR-MODE-8).
+  /// 표시 모드 불투명도와 캐럿 위치를 다시 계산하도록 주기마다 부른다(FR-MODE-8, FR-CARET-11).
   var onTick: (() -> Void)?
+  /// 다음 주기까지의 시간(PR-3).
+  var interval: () -> TimeInterval = { PollingPolicy.normal }
 
   private var timer: Timer?
-  private var tick = 0
+  private var lastCaptureCheck: TimeInterval = 0
   private let screenSaverLevel = Int(CGWindowLevelForKey(.screenSaverWindow))
 
   func start() {
-    let timer = Timer(timeInterval: Self.interval, repeats: true) { [weak self] _ in
+    poll()
+  }
+
+  /// 주기가 바뀔 수 있어서 타이머를 한 번씩 다시 건다. 타이머는 항상 하나이다.
+  private func schedule() {
+    let timer = Timer(timeInterval: interval(), repeats: false) { [weak self] _ in
       MainActor.assumeIsolated { self?.poll() }
     }
     RunLoop.main.add(timer, forMode: .common)
     self.timer = timer
-    poll()
   }
 
   func refreshCursor() {
@@ -33,11 +38,14 @@ final class SuppressionMonitor {
   }
 
   private func poll() {
-    defer { tick = (tick + 1) % Self.captureCheckEvery }
-    let capturing =
-      tick == 0
-      ? CaptureDetector.isCapturing(windows: Self.windows(), screenSaverLevel: screenSaverLevel)
-      : self.capturing
+    defer { schedule() }
+    let now = ProcessInfo.processInfo.systemUptime
+    var capturing = self.capturing
+    if now - lastCaptureCheck >= Self.captureCheckInterval {
+      lastCaptureCheck = now
+      capturing = CaptureDetector.isCapturing(
+        windows: Self.windows(), screenSaverLevel: screenSaverLevel)
+    }
     update(
       cursorVisible: CursorVisibility.isVisible, capturing: capturing,
       capsLock: NSEvent.modifierFlags.contains(.capsLock))

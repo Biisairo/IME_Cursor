@@ -58,46 +58,19 @@ import ImeCursorCore
     #expect(c.dimOpacity == 1)
   }
 
-  @Test func updateBehaviorClamps() {
+  @Test func updateBehaviorClampsPerBadge() {
     var settings = AppSettings.initial
-    settings.updateBehavior { $0.delay = 100 }
-    #expect(settings.behavior.delay == 10)
+    settings.updateBehavior(.cursor) { $0.delay = 100 }
+    settings.updateBehavior(.caret) { $0.delay = 0 }
+    #expect(settings.cursor.behavior.delay == 10)
+    #expect(settings.caret.behavior.delay == 0.5)
   }
 
-  @Test func roundTripKeepsBehavior() {
-    let storage = MemoryStorage()
+  @Test func badgesHaveIndependentBehavior() {
     var settings = AppSettings.initial
-    settings.updateBehavior {
-      $0.emphasisEnabled = true
-      $0.displayMode = .dimWhenIdle
-      $0.dimOpacity = 0.5
-    }
-    SettingsStore(storage: storage).save(settings)
-    #expect(SettingsStore(storage: storage).load() == settings)
-  }
-
-  @Test func versionTwoSettingsLoadWithBehaviorDefaults() throws {
-    var old = AppSettings.initial
-    old.badgeEnabled = false
-    var object = try #require(
-      try JSONSerialization.jsonObject(with: JSONEncoder().encode(old)) as? [String: Any])
-    object["schemaVersion"] = 2
-    object["behavior"] = nil
-    let storage = MemoryStorage()
-    storage.values[SettingsStore.key] = try JSONSerialization.data(withJSONObject: object)
-    let loaded = SettingsStore(storage: storage).load()
-    #expect(storage.values[SettingsStore.backupKey] == nil)
-    #expect(loaded.badgeEnabled == false)
-    #expect(loaded.behavior == .initial)
-    #expect(loaded.schemaVersion == AppSettings.currentSchemaVersion)
-  }
-
-  @Test func outOfRangeStoredBehaviorIsClampedOnLoad() {
-    var settings = AppSettings.initial
-    settings.behavior.emphasisScale = 9
-    let storage = MemoryStorage()
-    storage.values[SettingsStore.key] = try! JSONEncoder().encode(settings)
-    #expect(SettingsStore(storage: storage).load().behavior.emphasisScale == 3)
+    settings.updateBehavior(.caret) { $0.emphasisEnabled = true }
+    #expect(settings.caret.behavior.emphasisEnabled)
+    #expect(!settings.cursor.behavior.emphasisEnabled)
   }
 }
 

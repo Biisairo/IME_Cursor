@@ -1,10 +1,12 @@
+import ApplicationServices
+import Combine
 import ImeCursorCore
 import SwiftUI
 
 private enum Selection: Hashable {
   case behavior
   case defaultStyle
-  case source(String)
+  case source(BadgeKind, String)
 }
 
 private enum PreviewCursor: String, CaseIterable {
@@ -26,6 +28,16 @@ private final class SettingsViewState: ObservableObject {
   @Published var previewCursor: PreviewCursor = .arrow
   @Published var launchAtLogin = LaunchAtLogin.isEnabled
   @Published var launchError: String?
+  @Published var trusted = AXIsProcessTrusted()
+}
+
+extension BadgeKind {
+  fileprivate var title: String {
+    switch self {
+    case .cursor: "커서 배지"
+    case .caret: "캐럿 배지"
+    }
+  }
 }
 
 struct SettingsView: View {
@@ -37,16 +49,18 @@ struct SettingsView: View {
       List(selection: $state.selection) {
         Text("동작").tag(Selection.behavior)
         Text("기본 스타일").tag(Selection.defaultStyle)
-        Section("입력 소스") {
-          ForEach(model.sources) { source in
-            HStack {
-              Text(source.localizedName ?? source.id)
-              Spacer()
-              if source.id == model.current?.id {
-                Circle().fill(.green).frame(width: 7, height: 7)
+        ForEach(BadgeKind.allCases, id: \.self) { kind in
+          Section(kind.title) {
+            ForEach(model.sources) { source in
+              HStack {
+                Text(source.localizedName ?? source.id)
+                Spacer()
+                if source.id == model.current?.id {
+                  Circle().fill(.green).frame(width: 7, height: 7)
+                }
               }
+              .tag(Selection.source(kind, source.id))
             }
-            .tag(Selection.source(source.id))
           }
         }
       }
@@ -65,9 +79,9 @@ struct SettingsView: View {
       BehaviorEditor()
     case .defaultStyle:
       DefaultStyleEditor()
-    case .source(let id):
+    case .source(let kind, let id):
       if let source = model.sources.first(where: { $0.id == id }) {
-        SourceEditor(source: source)
+        SourceEditor(kind: kind, source: source)
       } else {
         placeholder
       }
@@ -89,42 +103,43 @@ extension DisplayMode {
     case .dimWhenIdle: "멈추면 흐리게"
     }
   }
+
+  /// 캐럿 배지에는 "멈추면 흐리게"가 없다(FR-MODE-1).
+  fileprivate static func cases(for kind: BadgeKind) -> [DisplayMode] {
+    kind == .cursor ? allCases : [.always, .afterSwitch]
+  }
+}
+
+extension CaretCondition {
+  fileprivate var title: String {
+    switch self {
+    case .off: "끄기"
+    case .whenCursorHidden: "커서가 숨겨졌을 때"
+    case .always: "캐럿이 있으면 항상"
+    }
+  }
 }
 
 private struct BehaviorEditor: View {
   @EnvironmentObject private var model: AppModel
   @EnvironmentObject private var state: SettingsViewState
+  private let permissionCheck = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
   var body: some View {
-    let behavior = Binding(
-      get: { model.settings.behavior },
-      set: { newValue in model.update { $0.updateBehavior { $0 = newValue } } })
-    Form {
-      Section("전환 강조 (입력 소스나 Caps Lock이 바뀔 때)") {
-        Toggle("전환 강조", isOn: behavior.emphasisEnabled)
-        NumberRow(
-          title: "확대 배율", value: behavior.emphasisScale,
-          range: BehaviorSettings.Limits.emphasisScale, step: 0.1)
-        .disabled(!behavior.wrappedValue.emphasisEnabled)
-        NumberRow(
-          title: "지속 시간 (초)", value: behavior.emphasisDuration,
-          range: BehaviorSettings.Limits.emphasisDuration, step: 0.05)
-        .disabled(!behavior.wrappedValue.emphasisEnabled)
-      }
-      Section("표시 모드") {
-        Picker("표시 모드", selection: behavior.displayMode) {
-          ForEach(DisplayMode.allCases, id: \.self) { Text($0.title).tag($0) }
+    let cursorEnabled = Binding(
+      get: { model.settings.cursorEnabled },
+      set: { newValue in model.update { $0.cursorEnabled = newValue } })
+    let condition = Binding(
+      get: { model.settings.caretCondition },
+      set: { newValue in
+        // 끄기에서 바꿀 때만 권한을 요청한다(FR-CARET-2).
+        if model.settings.caretCondition == .off && newValue != .off && !AXIsProcessTrusted() {
+          state.trusted = AXIsProcessTrustedWithOptions(
+            [Self.promptOption: true] as CFDictionary)
         }
-        .pickerStyle(.radioGroup)
-        NumberRow(
-          title: "대기 시간 (초)", value: behavior.delay, range: BehaviorSettings.Limits.delay,
-          step: 0.5)
-        .disabled(behavior.wrappedValue.displayMode == .always)
-        NumberRow(
-          title: "흐린 정도 (불투명도)", value: behavior.dimOpacity,
-          range: BehaviorSettings.Limits.dimOpacity, step: 0.05)
-        .disabled(behavior.wrappedValue.displayMode != .dimWhenIdle)
-      }
+        model.update { $0.caretCondition = newValue }
+      })
+    Form {
       Section("시작") {
         Toggle("로그인 시 자동 실행", isOn: $state.launchAtLogin)
           .onChange(of: state.launchAtLogin) { _, newValue in
@@ -136,10 +151,82 @@ private struct BehaviorEditor: View {
           Text(launchError).font(.caption).foregroundStyle(.red)
         }
       }
-      ResetRow { model.update { $0.updateBehavior { $0 = .initial } } }
+      Section("커서 배지") {
+        Toggle("커서 배지 표시", isOn: cursorEnabled)
+      }
+      BehaviorFields(kind: .cursor)
+      Section("캐럿 배지") {
+        Picker("표시 조건", selection: condition) {
+          ForEach(CaretCondition.allCases, id: \.self) { Text($0.title).tag($0) }
+        }
+        .pickerStyle(.radioGroup)
+        LabeledContent("접근성 권한") {
+          HStack {
+            Text(state.trusted ? "허용됨" : "허용 안 됨")
+              .foregroundStyle(state.trusted ? Color.secondary : Color.red)
+            if !state.trusted {
+              Button("시스템 설정 열기") {
+                NSWorkspace.shared.open(Self.accessibilitySettings)
+              }
+            }
+          }
+        }
+      }
+      BehaviorFields(kind: .caret)
+      ResetRow {
+        model.update { settings in
+          for kind in BadgeKind.allCases {
+            settings.updateBehavior(kind) { $0 = .initial }
+          }
+        }
+      }
     }
     .formStyle(.grouped)
     .navigationTitle("동작")
+    .onReceive(permissionCheck) { _ in state.trusted = AXIsProcessTrusted() }
+  }
+
+  /// `kAXTrustedCheckOptionPrompt`는 전역 변수라서 Swift 6 동시성 검사에 걸린다. 같은 값의 문자열을 쓴다.
+  private static let promptOption = "AXTrustedCheckOptionPrompt"
+  private static let accessibilitySettings = URL(
+    string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
+}
+
+private struct BehaviorFields: View {
+  @EnvironmentObject private var model: AppModel
+  let kind: BadgeKind
+
+  var body: some View {
+    let behavior = Binding(
+      get: { model.settings[kind].behavior },
+      set: { newValue in model.update { $0.updateBehavior(kind) { $0 = newValue } } })
+    Section("\(kind.title): 전환 강조 (입력 소스나 Caps Lock이 바뀔 때)") {
+      Toggle("전환 강조", isOn: behavior.emphasisEnabled)
+      NumberRow(
+        title: "확대 배율", value: behavior.emphasisScale,
+        range: BehaviorSettings.Limits.emphasisScale, step: 0.1)
+      .disabled(!behavior.wrappedValue.emphasisEnabled)
+      NumberRow(
+        title: "지속 시간 (초)", value: behavior.emphasisDuration,
+        range: BehaviorSettings.Limits.emphasisDuration, step: 0.05)
+      .disabled(!behavior.wrappedValue.emphasisEnabled)
+    }
+    Section("\(kind.title): 표시 모드") {
+      Picker("표시 모드", selection: behavior.displayMode) {
+        ForEach(DisplayMode.cases(for: kind), id: \.self) { Text($0.title).tag($0) }
+      }
+      .pickerStyle(.radioGroup)
+      NumberRow(
+        title: "대기 시간 (초)", value: behavior.delay, range: BehaviorSettings.Limits.delay,
+        step: 0.5)
+      .disabled(behavior.wrappedValue.displayMode == .always)
+      if kind == .cursor {
+        NumberRow(
+          title: "흐린 정도 (불투명도)", value: behavior.dimOpacity,
+          range: BehaviorSettings.Limits.dimOpacity, step: 0.05)
+        .disabled(behavior.wrappedValue.displayMode != .dimWhenIdle)
+      }
+    }
   }
 }
 
@@ -150,9 +237,23 @@ private struct DefaultStyleEditor: View {
     let style = Binding(
       get: { model.settings.defaultStyle },
       set: { newValue in model.update { $0.updateDefaultStyle { $0 = newValue } } })
+    let label = StyleResolver.resolve(.cursor, current: model.current, settings: model.settings)
+      .label
     Form {
-      PreviewRow(style: style.wrappedValue, label: model.resolved.label)
+      PreviewRow(
+        kind: .cursor, style: style.wrappedValue, position: model.settings.cursor.position,
+        label: label)
       StyleFields(style: style)
+      ForEach(BadgeKind.allCases, id: \.self) { kind in
+        let position = Binding(
+          get: { model.settings[kind].position },
+          set: { newValue in model.update { $0.updatePosition(kind) { $0 = newValue } } })
+        Section("\(kind.title) 위치 기본값 (오른쪽·아래쪽이 양수)") {
+          LabeledContent("기준 방향") { AnchorGrid(anchor: position.anchor) }
+          NumberRow(title: "X", value: position.offsetX, range: BadgeStyle.Limits.offset)
+          NumberRow(title: "Y", value: position.offsetY, range: BadgeStyle.Limits.offset)
+        }
+      }
       ResetRow { model.update { $0.resetDefaultStyle() } }
     }
     .formStyle(.grouped)
@@ -162,57 +263,197 @@ private struct DefaultStyleEditor: View {
 
 private struct SourceEditor: View {
   @EnvironmentObject private var model: AppModel
+  let kind: BadgeKind
   let source: InputSourceInfo
 
   var body: some View {
-    let settings = StyleResolver.sourceSettings(for: source, in: model.settings)
+    let settings = model.settings
+    let override = StyleResolver.override(kind, for: source, in: settings)
+    let base = settings.defaultStyle
+    let basePosition = settings[kind].position
+    let style = override.style(over: base)
     let label = Binding(
-      get: { settings.label },
+      get: { StyleResolver.sourceSettings(for: source, in: settings).label },
       set: { newValue in model.update { $0.updateSource(source) { $0.label = newValue } } })
-    let usesDefault = Binding(
-      get: { settings.mode == .useDefault },
-      set: { newValue in model.update { $0.setUsesDefaultStyle(newValue, for: source) } })
     Form {
       PreviewRow(
-        style: StyleResolver.style(for: settings, in: model.settings), label: settings.label)
-      Section {
+        kind: kind, style: style, position: override.position(over: basePosition),
+        label: label.wrappedValue)
+      Section("표시 글자 (커서 배지와 캐럿 배지가 함께 씀)") {
         TextField("표시 글자 (최대 \(BadgeLabel.maxLength)자)", text: label)
-        Toggle("기본 스타일 사용", isOn: usesDefault)
       }
-      if case .custom(let custom) = settings.mode {
-        StyleFields(
-          style: Binding(
-            get: { custom },
-            set: { newValue in
-              model.update { $0.updateSource(source) { $0.mode = .custom(newValue) } }
-            }))
+      Section("표시") {
+        field(override, \.isVisible, base.isVisible) { Toggle("배지 표시", isOn: $0) }
       }
-      ResetRow { model.update { $0.resetSource(source) } }
+      Section("글자") {
+        field(override, \.fontSize, base.fontSize) {
+          NumberRow(title: "크기", value: $0, range: BadgeStyle.Limits.fontSize)
+        }
+        field(override, \.fontWeight, base.fontWeight) { value in
+          Picker("굵기", selection: value) {
+            ForEach(FontWeight.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+          }
+        }
+        field(override, \.textColor, base.textColor) { ColorRow(title: "색", rgba: $0) }
+        field(override, \.textBorderWidth, base.textBorderWidth) {
+          NumberRow(title: "테두리 두께", value: $0, range: BadgeStyle.Limits.textBorder)
+        }
+        field(override, \.textBorderColor, base.textBorderColor) {
+          ColorRow(title: "테두리 색", rgba: $0)
+        }
+      }
+      Section("배경") {
+        field(override, \.width, base.width) {
+          NumberRow(title: "폭", value: $0, range: BadgeStyle.Limits.size)
+        }
+        field(override, \.height, base.height) {
+          NumberRow(title: "높이", value: $0, range: BadgeStyle.Limits.size)
+        }
+        field(override, \.cornerRadius, base.cornerRadius) {
+          NumberRow(title: "모서리 둥글기", value: $0, range: BadgeStyle.Limits.cornerRadius)
+        }
+        field(override, \.backgroundColor, base.backgroundColor) { ColorRow(title: "색", rgba: $0) }
+        field(override, \.backgroundBorderWidth, base.backgroundBorderWidth) {
+          NumberRow(title: "테두리 두께", value: $0, range: BadgeStyle.Limits.backgroundBorder)
+        }
+        field(override, \.backgroundBorderColor, base.backgroundBorderColor) {
+          ColorRow(title: "테두리 색", rgba: $0)
+        }
+      }
+      Section("위치 (오른쪽·아래쪽이 양수)") {
+        field(override, \.anchor, basePosition.anchor) { value in
+          LabeledContent("기준 방향") { AnchorGrid(anchor: value) }
+        }
+        field(override, \.offsetX, basePosition.offsetX) {
+          NumberRow(title: "X", value: $0, range: BadgeStyle.Limits.offset)
+        }
+        field(override, \.offsetY, basePosition.offsetY) {
+          NumberRow(title: "Y", value: $0, range: BadgeStyle.Limits.offset)
+        }
+      }
+      ResetRow { model.update { $0.resetOverride(kind, for: source) } }
     }
     .formStyle(.grouped)
-    .navigationTitle(source.localizedName ?? source.id)
+    .navigationTitle("\(source.localizedName ?? source.id) · \(kind.title)")
+  }
+
+  private func field<Value: Equatable, Content: View>(
+    _ override: StyleOverride, _ path: WritableKeyPath<StyleOverride, Value?>, _ base: Value,
+    @ViewBuilder content: @escaping (Binding<Value>) -> Content
+  ) -> some View {
+    OverrideRow(
+      value: override[keyPath: path], base: base,
+      set: { [kind, source] newValue in
+        model.update { $0.updateOverride(kind, for: source) { $0[keyPath: path] = newValue } }
+      }, content: content)
+  }
+}
+
+/// 덮어쓴 항목에는 점과 되돌리기 버튼을 붙인다(UI-14).
+private struct OverrideRow<Value: Equatable, Content: View>: View {
+  let value: Value?
+  let base: Value
+  let set: (Value?) -> Void
+  @ViewBuilder let content: (Binding<Value>) -> Content
+
+  var body: some View {
+    HStack {
+      Circle().fill(value == nil ? Color.clear : Color.accentColor).frame(width: 6, height: 6)
+      content(Binding(get: { value ?? base }, set: { set($0) }))
+      Button {
+        set(nil)
+      } label: {
+        Image(systemName: "arrow.uturn.backward")
+      }
+      .buttonStyle(.borderless)
+      .help("되돌리기")
+      .opacity(value == nil ? 0 : 1)
+      .disabled(value == nil)
+    }
+  }
+}
+
+/// 기준 방향 3 × 3 격자(UI-17).
+private struct AnchorGrid: View {
+  @Binding var anchor: BadgeAnchor
+
+  private static let rows: [[BadgeAnchor]] = [
+    [.topLeft, .top, .topRight], [.left, .center, .right], [.bottomLeft, .bottom, .bottomRight],
+  ]
+
+  var body: some View {
+    Grid(horizontalSpacing: 2, verticalSpacing: 2) {
+      ForEach(Self.rows, id: \.self) { row in
+        GridRow {
+          ForEach(row, id: \.self) { item in
+            Button {
+              anchor = item
+            } label: {
+              Image(systemName: item.symbol)
+                .frame(width: 22, height: 22)
+                .background(item == anchor ? Color.accentColor.opacity(0.35) : Color.clear)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+            }
+            .buttonStyle(.borderless)
+          }
+        }
+      }
+    }
+  }
+}
+
+extension BadgeAnchor {
+  fileprivate var symbol: String {
+    switch self {
+    case .topLeft: "arrow.up.left"
+    case .top: "arrow.up"
+    case .topRight: "arrow.up.right"
+    case .left: "arrow.left"
+    case .center: "circle.fill"
+    case .right: "arrow.right"
+    case .bottomLeft: "arrow.down.left"
+    case .bottom: "arrow.down"
+    case .bottomRight: "arrow.down.right"
+    }
   }
 }
 
 private struct PreviewRow: View {
   @EnvironmentObject private var state: SettingsViewState
+  let kind: BadgeKind
   let style: BadgeStyle
+  let position: BadgePosition
   let label: String
 
   var body: some View {
     let cursor = state.previewCursor.cursor
-    let layout = PreviewLayout.make(
-      cursorSize: cursor.image.size, hotSpot: cursor.hotSpot, style: style)
-    Section("미리보기") {
-      Picker("커서", selection: $state.previewCursor) {
-        ForEach(PreviewCursor.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+    let layout =
+      switch kind {
+      case .cursor:
+        PreviewLayout.make(
+          cursorSize: cursor.image.size, hotSpot: cursor.hotSpot, style: style, position: position)
+      case .caret:
+        PreviewLayout.make(caretSize: PreviewLayout.caretSize, style: style, position: position)
       }
-      .pickerStyle(.segmented)
+    Section("미리보기") {
+      if kind == .cursor {
+        Picker("커서", selection: $state.previewCursor) {
+          ForEach(PreviewCursor.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+        }
+        .pickerStyle(.segmented)
+      }
       HStack {
         Spacer()
         ZStack(alignment: .topLeading) {
-          Image(nsImage: cursor.image)
-            .offset(x: layout.cursorOrigin.x, y: layout.cursorOrigin.y)
+          switch kind {
+          case .cursor:
+            Image(nsImage: cursor.image)
+              .offset(x: layout.imageOrigin.x, y: layout.imageOrigin.y)
+          case .caret:
+            Rectangle().fill(.primary)
+              .frame(width: PreviewLayout.caretSize.width, height: PreviewLayout.caretSize.height)
+              .offset(x: layout.imageOrigin.x, y: layout.imageOrigin.y)
+          }
           BadgeView(style: style, label: label)
             .opacity(style.isVisible ? 1 : 0.3)
             .offset(x: layout.badgeOrigin.x, y: layout.badgeOrigin.y)
@@ -251,10 +492,6 @@ private struct StyleFields: View {
         title: "테두리 두께", value: $style.backgroundBorderWidth,
         range: BadgeStyle.Limits.backgroundBorder)
       ColorRow(title: "테두리 색", rgba: $style.backgroundBorderColor)
-    }
-    Section("커서 기준 위치 (오른쪽·아래쪽이 양수)") {
-      NumberRow(title: "X", value: $style.offsetX, range: BadgeStyle.Limits.offset)
-      NumberRow(title: "Y", value: $style.offsetY, range: BadgeStyle.Limits.offset)
     }
   }
 }

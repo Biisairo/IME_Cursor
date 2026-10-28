@@ -12,15 +12,12 @@ import ImeCursorCore
     #expect(s.width == 22)
     #expect(s.height == 18)
     #expect(s.cornerRadius == 5)
-    #expect(s.offsetX == 16)
-    #expect(s.offsetY == 16)
   }
 
   @Test func valuesInRangeAreUnchanged() {
     var s = BadgeStyle.initial
     s.fontSize = 6
     s.width = 200
-    s.offsetX = -200
     #expect(s.clamped() == s)
   }
 
@@ -30,15 +27,11 @@ import ImeCursorCore
     s.width = 0
     s.height = -5
     s.cornerRadius = -1
-    s.offsetX = -999
-    s.offsetY = -201
     let c = s.clamped()
     #expect(c.fontSize == 6)
     #expect(c.width == 4)
     #expect(c.height == 4)
     #expect(c.cornerRadius == 0)
-    #expect(c.offsetX == -200)
-    #expect(c.offsetY == -200)
   }
 
   @Test func valuesAboveRangeClampToUpperBound() {
@@ -47,15 +40,11 @@ import ImeCursorCore
     s.width = 201
     s.height = 1000
     s.cornerRadius = 101
-    s.offsetX = 999
-    s.offsetY = 200.5
     let c = s.clamped()
     #expect(c.fontSize == 72)
     #expect(c.width == 200)
     #expect(c.height == 200)
     #expect(c.cornerRadius == 100)
-    #expect(c.offsetX == 200)
-    #expect(c.offsetY == 200)
   }
 
   @Test func nonFiniteValuesClampIntoRange() {

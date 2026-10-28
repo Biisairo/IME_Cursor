@@ -46,8 +46,6 @@ public struct BadgeStyle: Codable, Equatable, Hashable, Sendable {
     width: 22,
     height: 18,
     cornerRadius: 5,
-    offsetX: 16,
-    offsetY: 16,
     backgroundBorderWidth: 1,
     backgroundBorderColor: transparent,
     textBorderWidth: 1,
@@ -61,8 +59,6 @@ public struct BadgeStyle: Codable, Equatable, Hashable, Sendable {
   public var width: Double
   public var height: Double
   public var cornerRadius: Double
-  public var offsetX: Double
-  public var offsetY: Double
   public var backgroundBorderWidth: Double
   public var backgroundBorderColor: RGBA
   public var textBorderWidth: Double
@@ -71,7 +67,7 @@ public struct BadgeStyle: Codable, Equatable, Hashable, Sendable {
   public init(
     isVisible: Bool, fontSize: Double, fontWeight: FontWeight, textColor: RGBA,
     backgroundColor: RGBA, width: Double, height: Double, cornerRadius: Double,
-    offsetX: Double, offsetY: Double, backgroundBorderWidth: Double,
+    backgroundBorderWidth: Double,
     backgroundBorderColor: RGBA, textBorderWidth: Double, textBorderColor: RGBA
   ) {
     self.isVisible = isVisible
@@ -82,8 +78,6 @@ public struct BadgeStyle: Codable, Equatable, Hashable, Sendable {
     self.width = width
     self.height = height
     self.cornerRadius = cornerRadius
-    self.offsetX = offsetX
-    self.offsetY = offsetY
     self.backgroundBorderWidth = backgroundBorderWidth
     self.backgroundBorderColor = backgroundBorderColor
     self.textBorderWidth = textBorderWidth
@@ -92,7 +86,7 @@ public struct BadgeStyle: Codable, Equatable, Hashable, Sendable {
 
   private enum CodingKeys: String, CodingKey {
     case isVisible, fontSize, fontWeight, textColor, backgroundColor, width, height
-    case cornerRadius, offsetX, offsetY
+    case cornerRadius
     case backgroundBorderWidth, backgroundBorderColor, textBorderWidth, textBorderColor
   }
 
@@ -108,8 +102,6 @@ public struct BadgeStyle: Codable, Equatable, Hashable, Sendable {
     width = try c.decode(Double.self, forKey: .width)
     height = try c.decode(Double.self, forKey: .height)
     cornerRadius = try c.decode(Double.self, forKey: .cornerRadius)
-    offsetX = try c.decode(Double.self, forKey: .offsetX)
-    offsetY = try c.decode(Double.self, forKey: .offsetY)
     backgroundBorderWidth =
       try c.decodeIfPresent(Double.self, forKey: .backgroundBorderWidth)
       ?? initial.backgroundBorderWidth
@@ -128,8 +120,6 @@ public struct BadgeStyle: Codable, Equatable, Hashable, Sendable {
 
   public var outerWidth: Double { width + 2 * backgroundBorderWidth }
   public var outerHeight: Double { height + 2 * backgroundBorderWidth }
-  public var outerOffsetX: Double { offsetX - backgroundBorderWidth }
-  public var outerOffsetY: Double { offsetY - backgroundBorderWidth }
 
   public var outerCornerRadius: Double {
     effectiveCornerRadius > 0 ? effectiveCornerRadius + backgroundBorderWidth : 0
@@ -149,8 +139,6 @@ public struct BadgeStyle: Codable, Equatable, Hashable, Sendable {
     s.width = width.clamped(to: Limits.size)
     s.height = height.clamped(to: Limits.size)
     s.cornerRadius = cornerRadius.clamped(to: Limits.cornerRadius)
-    s.offsetX = offsetX.clamped(to: Limits.offset)
-    s.offsetY = offsetY.clamped(to: Limits.offset)
     s.backgroundBorderWidth = backgroundBorderWidth.clamped(to: Limits.backgroundBorder)
     s.backgroundBorderColor = backgroundBorderColor.clamped()
     s.textBorderWidth = textBorderWidth.clamped(to: Limits.textBorder)

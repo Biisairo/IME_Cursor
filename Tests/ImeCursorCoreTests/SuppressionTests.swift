@@ -53,7 +53,7 @@ import ImeCursorCore
 
 @Suite struct BadgeVisibilityTests {
   private func badge(visible: Bool) -> ResolvedBadge {
-    ResolvedBadge(style: .initial, label: "A", isVisible: visible)
+    ResolvedBadge(style: .initial, position: .cursorInitial, label: "A", isVisible: visible)
   }
 
   @Test func showsWhenEverythingAllows() {

@@ -7,7 +7,7 @@ public enum DisplayMode: String, Codable, CaseIterable, Sendable {
   case dimWhenIdle
 }
 
-/// 앱 전체에 적용되는 동작 설정(FR-EMPH-1, FR-MODE-1, 2).
+/// 배지별 동작 설정(FR-EMPH-1, FR-MODE-1, 2).
 public struct BehaviorSettings: Codable, Equatable, Sendable {
   public enum Limits {
     public static let emphasisScale: ClosedRange<Double> = 1...3

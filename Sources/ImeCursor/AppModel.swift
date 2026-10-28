@@ -29,10 +29,6 @@ final class AppModel: NSObject, ObservableObject {
       object: nil, suspensionBehavior: .deliverImmediately)
   }
 
-  var resolved: ResolvedBadge {
-    StyleResolver.resolve(current: current, settings: settings)
-  }
-
   func update(_ transform: (inout AppSettings) -> Void) {
     transform(&settings)
     store.save(settings)

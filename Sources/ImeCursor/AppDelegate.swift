@@ -21,6 +21,10 @@ final class BadgeAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     statusItem = makeStatusItem()
   }
 
+  func applicationWillTerminate(_ notification: Notification) {
+    badge?.stop()
+  }
+
   private func makeStatusItem() -> NSStatusItem {
     let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     item.button?.image = IconArtwork.menuBarImage()
